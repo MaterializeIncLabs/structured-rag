@@ -1,14 +1,3 @@
-if (!API_KEY) {
-    console.error(
-        '\n🚫 Failed to load configuration\n' +
-        'Cannot find API_KEY in config.js\n' +
-        'Please check your configuration file.'
-    );
-    throw new Error('Missing API_KEY configuration');
-}
-
-const API_URL = 'https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51/chat/custom/';
-
 // Elements
 const submitButton = document.getElementById('submit');
 const submitText = document.getElementById('submitText');
@@ -31,40 +20,14 @@ queryInput.addEventListener('input', () => {
 });
 
 async function makeApiCall(query, includeContext = false) {
-    const messages = [];
-
-    if (includeContext) {
-        messages.push({
-            role: "system",
-            content: SYSTEM_PROMPT
-        });
-    }
-
-    messages.push({
-        role: "context",
-    });
-
-    if (includeContext) {
-        messages.push({
-            role: "user",
-            content: "transactions is a Kafka avro upsert source. transactions is running on the sources cluster. the sources cluster is in status OOM-killed."
-        });
-    }
-
-    messages.push({
-        role: "query",
-        content: query
-    });
-
-    const response = await fetch(API_URL, {
+    const response = await fetch('/api/query', {
         method: 'POST',
         headers: {
-            'X-API-KEY': API_KEY,
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            generation_model: "gpt-4o",
-            messages: messages
+            query: query,
+            include_context: includeContext
         })
     });
 
@@ -80,7 +43,6 @@ async function copyToClipboard(elementId) {
     const element = document.getElementById(elementId);
     try {
         await navigator.clipboard.writeText(element.textContent);
-        // You could add a toast notification here
         console.log('Copied to clipboard');
     } catch (err) {
         console.error('Failed to copy text: ', err);
@@ -111,8 +73,8 @@ submitButton.addEventListener('click', async () => {
             marked.parse(structuredDataResponse.answer || 'No answer received');
 
     } catch (err) {
-        errorDiv.textContent = `Error: ${err.message}`;
         errorDiv.classList.remove('hidden');
+        errorText.textContent = `Error: ${err.message}`;
     } finally {
         submitButton.disabled = false;
         submitText.textContent = 'Submit Query';

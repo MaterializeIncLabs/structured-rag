@@ -10,15 +10,14 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI()
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
+KAPA_API_URL = "https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51/chat/custom/"
 
 try:
     with open('system_prompt.txt', 'r') as file:
@@ -27,7 +26,6 @@ except FileNotFoundError:
     logger.error("system_prompt.txt not found!")
     raise
 
-
 try:
     with open('mz_query.sql', 'r') as file:
         MZ_QUERY = file.read().strip()
@@ -35,13 +33,8 @@ except FileNotFoundError:
     logger.error("mz_query.sql not found!")
     raise
 
-# Constants
-KAPA_API_URL = "https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51/chat/custom/"
-
-# Create connection pool on startup
-@app.on_event("startup")
-async def startup():
-    # Create the connection pool
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     conninfo = psycopg.conninfo.make_conninfo(
         host=os.getenv('MATERIALIZE_HOST'),
         port=int(os.getenv('MATERIALIZE_PORT', '6875')),
@@ -49,23 +42,27 @@ async def startup():
         password=os.getenv('MATERIALIZE_PASSWORD'),
         dbname=os.getenv('MATERIALIZE_DB')
     )
-    app.state.pool = AsyncConnectionPool(
+    pool = AsyncConnectionPool(
         conninfo=conninfo,
         min_size=1,
         max_size=10,
         kwargs={"row_factory": dict_row}
     )
+    app.state.pool = pool
+    try:
+        yield
+    finally:
+        await pool.close()
 
-@app.on_event("shutdown")
-async def shutdown():
-    await app.state.pool.close()
+app = FastAPI(lifespan=lifespan)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 async def get_context_from_db():
-    """Query the database for context"""
+    """Query the database for context."""
     try:
         async with app.state.pool.connection() as conn:
             async with conn.cursor() as curr:
-                # Replace this query with your actual query
                 await curr.execute(MZ_QUERY)
                 row = await curr.fetchone()
                 report = row['report'] if row else None
@@ -81,10 +78,12 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 async def read_root():
+    """Serve the index.html file."""
     return FileResponse("static/index.html")
 
 @app.post("/api/query")
 async def query_kapa(request: QueryRequest):
+    """Handle queries to the Kapa API."""
     try:
         messages = []
         
@@ -94,19 +93,19 @@ async def query_kapa(request: QueryRequest):
                 "content": SYSTEM_PROMPT
             })
         
-        messages.append({
-            "role": "context"
-        })
+        query = request.query
         
         if request.include_context:
             try:
                 context = await get_context_from_db()
-                logger.debug(context)
                 if context:
-                    messages.append({
-                        "role": "user",
-                        "content": context
-                    })
+                    query = f"""
+LIVE CONTEXT:
+{context}
+
+USER QUERY:
+{query}
+"""
                 else:
                     logger.warning("No context found in database")
             except Exception as e:
@@ -118,7 +117,7 @@ async def query_kapa(request: QueryRequest):
         
         messages.append({
             "role": "query",
-            "content": request.query
+            "content": query
         })
         
         payload = {

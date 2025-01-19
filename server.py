@@ -1,6 +1,5 @@
 import os
 import logging
-from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

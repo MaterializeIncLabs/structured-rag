@@ -1,6 +1,6 @@
 # Structured RAG Comparison Tool
 
-This application provides a web interface for comparing responses from a Large Language Model (LLM) with and without structured context data. It demonstrates the impact of providing contextual information on the quality and relevance of LLM responses.
+This repository contains a sample application that demonstrates how to power Retrieval-Augmented Generation (RAG) workflows with real-time, structured data using Materialize. By combining the power of Materialize’s incremental view maintenance with your existing AI models, this application enables dynamic and low-latency access to fresh, queryable data—solving the challenges of stale data and costly transformations in traditional architectures. For a deeper dive into how Materialize enables real-time structured data for RAG workflows, check out our [blog post](https://materialize.com/blog/realtime-structured-data-for-rag/).
 
 ## Prerequisites
 

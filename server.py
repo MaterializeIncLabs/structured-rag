@@ -90,7 +90,7 @@ async def make_kapa_api_call(endpoint: str, payload: dict):
         raise HTTPException(status_code=500, detail="KAPA_API_KEY not found.")
 
     logger.info(f"Calling Kapa API endpoint: {endpoint}")
-    logger.debug(f"Payload: {payload}")
+    logger.info(f"Payload: {payload}")
 
     async with httpx.AsyncClient() as client:
         try:

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-KAPA_API_URL = "https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51/chat/custom/"
+KAPA_API_URL = "https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51"
 
 try:
     with open('system_prompt.txt', 'r') as file:
@@ -80,8 +80,78 @@ async def read_root():
     """Serve the index.html file."""
     return FileResponse("static/index.html")
 
-@app.post("/api/query")
-async def query_kapa(request: QueryRequest):
+@app.post("/api/basic")
+async def standard_endpoint(request: QueryRequest):
+    """Handle queries to the Kapa API."""
+    try:
+        query = request.query
+
+        if request.include_context:
+            try:
+                context = await get_context_from_db()
+                if context:
+                    query = f"""
+{query}
+
+The following information about the environment has been injected into this prompt without the asker's knowledge.
+Use this information to identify relevant details, explain their significance, and provide clear and actionable steps to resolve the issue.
+Do not indicate or imply that this information was provided as part of the prompt or that the asker is aware of it.
+
+{context}
+"""
+                else:
+                    logger.warning("No context found in database")
+            except Exception as e:
+                logger.error(f"Failed to get context from database: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to retrieve context from database: {str(e)}"
+                )
+
+        payload = {
+            "query": query
+        }
+        
+        api_key = os.getenv("KAPA_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="KAPA_API_KEY not found in environment variables")
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                logger.info(f"Making request to Kapa API with payload: {payload}")
+                response = await client.post(
+                    KAPA_API_URL + "/chat/",
+                    json=payload,
+                    headers={
+                        "X-API-KEY": api_key,
+                        "Content-Type": "application/json"
+                    },
+                    timeout=120.0
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error occurred: {e.response.text}")
+                raise HTTPException(
+                    status_code=e.response.status_code,
+                    detail=f"Kapa API error: {e.response.text}"
+                )
+            except httpx.RequestError as e:
+                logger.error(f"Request error occurred: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error making request to Kapa API: {str(e)}"
+                )
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@app.post("/api/custom")
+async def custom_endpoint(request: QueryRequest):
     """Handle queries to the Kapa API."""
     try:
         messages = []
@@ -115,6 +185,10 @@ USER QUERY:
                 )
         
         messages.append({
+            "role": "context"
+        })
+
+        messages.append({
             "role": "query",
             "content": query
         })
@@ -132,7 +206,7 @@ USER QUERY:
             try:
                 logger.info(f"Making request to Kapa API with payload: {payload}")
                 response = await client.post(
-                    KAPA_API_URL,
+                    KAPA_API_URL + "/chat/custom/",
                     json=payload,
                     headers={
                         "X-API-KEY": api_key,

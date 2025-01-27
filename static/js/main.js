@@ -20,7 +20,9 @@ queryInput.addEventListener('input', () => {
 });
 
 async function makeApiCall(query, includeContext = false) {
-    const response = await fetch('/api/query', {
+    const mode = document.getElementById('mode').value;
+    const endpoint = mode === 'standard' ? '/api/basic' : '/api/custom';
+    const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

@@ -2,6 +2,17 @@
 
 This repository contains a sample application that demonstrates how to power Retrieval-Augmented Generation (RAG) workflows with real-time, structured data using Materialize. By combining the power of Materialize’s incremental view maintenance with your existing AI models, this application enables dynamic and low-latency access to fresh, queryable data—solving the challenges of stale data and costly transformations in traditional architectures. For a deeper dive into how Materialize enables real-time structured data for RAG workflows, check out our [blog post](https://materialize.com/blog/realtime-structured-data-for-rag/).
 
+## Structured RAG in Action
+
+The example below showcases how integrating real-time data into RAG workflows improves the accuracy and relevance of AI-generated responses.
+
+A user asks, "Why can't I query my sales source?"
+
+* Without live context (left panel): The standard RAG response provides general information about possible causes and remediations. While accurate, it lacks specificity.
+* With live context (right panel): Empowered by Materialize's real-time structured data, the AI pipeline pinpoints the exact issue with actionable feedback tailored to the sales source, enabling immediate resolution.
+
+![screenshot](misc/structured-rag-demo.png)
+
 ## Prerequisites
 
 - Python 3.11 or higher

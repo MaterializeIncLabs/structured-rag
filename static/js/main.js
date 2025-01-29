@@ -7,22 +7,32 @@ const errorText = document.getElementById('errorText');
 const queryInput = document.getElementById('query');
 const charCount = document.getElementById('charCount');
 
-// Configure marked options
+const renderer = new marked.Renderer();
+const originalListItem = renderer.listitem;
+
+renderer.listitem = function (text) {
+    if (text.includes('freshmart_source is a postgres source on the demo_sources cluster') ||
+        text.includes('demo_sources is a 50cc managed cluster with replication factor 0') ||
+        text.includes('sales is a subsource of freshmart_source')) {
+        return `<li class="highlight-line">${text}</li>`;
+    }
+    return originalListItem.call(this, text);
+};
+
+
 marked.setOptions({
+    renderer: renderer,
     breaks: true, // Adds <br> on single line breaks
-    gfm: true,    // GitHub Flavored Markdown
+    gfm: true, // GitHub Flavored Markdown
     headerIds: false // Prevents automatic header ID generation
 });
 
-// Update character count
 queryInput.addEventListener('input', () => {
     charCount.textContent = `${queryInput.value.length} characters`;
 });
 
-async function makeApiCall(query, includeContext = false) {
-    const mode = document.getElementById('mode').value;
-    const endpoint = mode === 'standard' ? '/api/basic' : '/api/custom';
-    const response = await fetch(endpoint, {
+async function makeApiCall(query, includeContext) {
+    const response = await fetch('/api/basic', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -32,11 +42,9 @@ async function makeApiCall(query, includeContext = false) {
             include_context: includeContext
         })
     });
-
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     return response.json();
 }
 
@@ -51,10 +59,14 @@ async function copyToClipboard(elementId) {
     }
 }
 
-// Handle form submission
+function formatDuration(seconds) {
+    const wholeSeconds = Math.floor(seconds);
+    const milliseconds = Math.round((seconds - wholeSeconds) * 1000);
+    return `${wholeSeconds}s ${milliseconds}ms`;
+}
+
 submitButton.addEventListener('click', async () => {
     const query = queryInput.value.trim();
-
     if (!query) return;
 
     submitButton.disabled = true;
@@ -62,20 +74,43 @@ submitButton.addEventListener('click', async () => {
     loadingIcon.classList.remove('hidden');
     errorDiv.classList.add('hidden');
 
+    const mode = document.getElementById('mode').value;
+    const includeContext = mode === 'on';
+
     try {
-        const [ragResponse, structuredDataResponse] = await Promise.all([
-            makeApiCall(query, false),
-            makeApiCall(query, true)
-        ]);
+        const result = await makeApiCall(query, includeContext);
+        console.log(result)
 
-        // Convert markdown to HTML and display
-        document.getElementById('ragResponse').innerHTML =
-            marked.parse(ragResponse.answer || 'No answer received');
-        document.getElementById('structuredResponse').innerHTML =
-            marked.parse(structuredDataResponse.answer || 'No answer received');
+        const errorDiv = document.getElementById('error');
+        const errorText = document.getElementById('errorText');
 
+        errorDiv.classList.remove('hidden', 'bg-red-50', 'text-red-700');
+        errorDiv.classList.add('bg-blue-50', 'text-blue-700');
+        let timingText = `Inference Time: ${formatDuration(result.api_duration)}`;
+        if (includeContext) {
+            timingText += ` • Context Retrieval: ${formatDuration(result.context_duration)}`;
+        }
+        timingText += ` • End to End Duration: ${formatDuration(result.api_duration + result.context_duration)}`;
+
+        errorText.textContent = timingText;
+        errorDiv.style.display = 'block';
+
+        let promptHtml = marked.parse(result.prompt || 'No prompt received');
+
+        if (result.relevant_sources && result.relevant_sources.length > 0) {
+            promptHtml += `\n\n### ${result.relevant_sources.length} Relevant Sources\n`;
+            result.relevant_sources.forEach(source => {
+                promptHtml += `- ${source.source_url}\n`;
+            });
+        }
+
+        document.getElementById('prompt').innerHTML = marked.parse(promptHtml);
+
+        document.getElementById('answer').innerHTML =
+            marked.parse(result.answer || 'No answer received');
     } catch (err) {
-        errorDiv.classList.remove('hidden');
+        errorDiv.classList.remove('hidden', 'bg-blue-50', 'text-blue-700');
+        errorDiv.classList.add('bg-red-50', 'text-red-700');
         errorText.textContent = `Error: ${err.message}`;
     } finally {
         submitButton.disabled = false;
@@ -84,7 +119,6 @@ submitButton.addEventListener('click', async () => {
     }
 });
 
-// Add keyboard shortcut for submission
 queryInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         submitButton.click();

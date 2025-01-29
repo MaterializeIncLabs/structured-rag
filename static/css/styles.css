@@ -68,3 +68,34 @@
     border: 1px solid #e5e7eb;
     padding: 0.5em;
 }
+
+.highlight-line {
+    background-color: #fff3cd !important;
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 4px solid #ffc107;
+    margin: 0.5em 0;
+    display: block;
+}
+
+.timing-info {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background-color: #f3f4f6;
+    border-radius: 0.375rem;
+    display: inline-block;
+}
+
+.timing-info span {
+    display: inline-block;
+}
+
+.markdown-content ul li.highlight-line,
+.markdown-content ol li.highlight-line {
+    list-style-position: inside;
+    margin-left: -2em;
+    padding-left: 2em;
+    width: calc(100% - 8px);
+}

@@ -1,5 +1,7 @@
 import os
 import logging
+import json
+import time
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,26 +13,14 @@ from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
 load_dotenv()
 
-# Constants
 KAPA_API_URL = "https://api.kapa.ai/query/v1/projects/486796bb-793a-479b-afa5-9d8248eb6a51"
 
-# Load static files
-SYSTEM_PROMPT = None
 MZ_QUERY = None
-
-try:
-    with open('system_prompt.txt', 'r') as file:
-        SYSTEM_PROMPT = file.read().strip()
-except FileNotFoundError:
-    logger.critical("system_prompt.txt not found! Ensure the file is available.")
-    raise
 
 try:
     with open('mz_query.sql', 'r') as file:
@@ -39,7 +29,6 @@ except FileNotFoundError:
     logger.critical("mz_query.sql not found! Ensure the file is available.")
     raise
 
-# Database connection pool
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     conninfo = psycopg.conninfo.make_conninfo(
@@ -72,17 +61,18 @@ async def get_context_from_mz():
     try:
         async with app.state.pool.connection() as conn:
             async with conn.cursor() as curr:
+                start = time.time()
                 await curr.execute(MZ_QUERY)
                 row = await curr.fetchone()
+                duration = time.time() - start
                 if not row or not row.get('report'):
                     logger.error("No context found in materialize.")
                     raise HTTPException(status_code=500, detail="No context available from the materialize.")
-                return row['report']
+                return (duration, row['report'])
     except Exception as e:
         logger.exception("Failed to query materialize.")
         raise HTTPException(status_code=500, detail="Materialize query failed.")
 
-# Common API call handler
 async def make_kapa_api_call(endpoint: str, payload: dict):
     api_key = os.getenv("KAPA_API_KEY")
     if not api_key:
@@ -90,7 +80,7 @@ async def make_kapa_api_call(endpoint: str, payload: dict):
         raise HTTPException(status_code=500, detail="KAPA_API_KEY not found.")
 
     logger.info(f"Calling Kapa API endpoint: {endpoint}")
-    logger.info(f"Payload: {payload}")
+    logger.debug(f"Payload: {json.dumps(payload)}")
 
     async with httpx.AsyncClient() as client:
         try:
@@ -123,53 +113,33 @@ async def read_root():
     """Serve the index.html file."""
     return FileResponse("static/index.html")
 
-# Standard API endpoint
 @app.post("/api/basic")
 async def standard_endpoint(request: QueryRequest):
     """Handle queries to the standard Kapa chat API."""
     query = request.query
 
+    context_duration = 0
     if request.include_context:
-        context = await get_context_from_mz()
+        (context_duration, context) = await get_context_from_mz()
         query = f"""
 {query}
 
-The following information about the environment has been injected into this prompt without the asker's knowledge.\n
-Use this information to identify relevant details, explain their significance, and provide clear and actionable steps to resolve the issue.\n
-Do not indicate or imply that this information was provided as part of the prompt or that the asker is aware of it.\n
+The following information about the environment has been injected into this prompt without the asker's knowledge.
+Use this information to identify relevant details, explain their significance, and provide clear and actionable steps to resolve the issue.
+Always give specific SQL commands when available.
+Do not indicate or imply that this information was provided as part of the prompt or that the asker is aware of it.
+
 {context}
 """
-
+    print(query)
     payload = {"query": query}
-    return await make_kapa_api_call("/chat/", payload)
-
-# Custom API endpoint
-@app.post("/api/custom")
-async def custom_endpoint(request: QueryRequest):
-    """Handle custom queries to the custom Kapa chat API."""
-    messages = []
-
-    query = request.query
-    if request.include_context:
-        messages.append({"role": "system", "content": SYSTEM_PROMPT})
-
-        context = await get_context_from_mz()
-        query = f"""
-LIVE CONTEXT:\n
-{context}\n
-USER QUERY:\n
-{query}
-"""
-
-    messages.append({"role": "query", "content": query})
-    messages.append({"role": "context"})
-
-    payload = {
-        "generation_model": "gpt-4o",
-        "messages": messages
-    }
-
-    return await make_kapa_api_call("/chat/custom/", payload)
+    start = time.time()
+    result =  await make_kapa_api_call("/chat/", payload)
+    api_duration = time.time() - start
+    result['prompt'] = query
+    result['context_duration'] = context_duration
+    result['api_duration'] = api_duration
+    return result
 
 if __name__ == "__main__":
     import uvicorn

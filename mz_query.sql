@@ -1,5 +1,9 @@
+CREATE VIEW materialize_configuration AS
 WITH clusters AS (
-    SELECT name || ' is a ' || size || ' managed cluster with replication factor ' || replication_factor AS fact
+    SELECT name 
+        || ' is a ' || size 
+        || ' managed cluster with replication factor ' 
+        || replication_factor AS fact
     FROM mz_catalog.mz_clusters
     WHERE id LIKE 'u%' AND managed IS TRUE
 ),
@@ -35,11 +39,27 @@ source_errors AS (
 	   OR (status NOT IN ('running', 'starting') AND type = 'table')
 ),
 
+views AS (
+    SELECT name || ' is a view'
+    FROM mz_views
+    WHERE id LIKE 'u%'
+),
+
+indexes AS (
+    SELECT i.name || ' is an index on ' || o.name || ' on the ' || c.name || ' cluster'
+    FROM mz_indexes i 
+    JOIN mz_objects o ON i.on_id = o.id 
+    JOIN mz_clusters c ON c.id = i.cluster_id
+    WHERE i.id LIKE 'u%'
+),
+
 context AS (
     SELECT * FROM clusters
 	UNION ALL SELECT * FROM sources
 	UNION ALL SELECT * FROM subsource_tables
 	UNION ALL SELECT * FROM source_errors
+    UNION ALL SELECT * FROM views
+    UNION ALL SELECT * FROM indexes
 )
 SELECT string_agg('- ' || fact, chr(10)) AS report
 FROM context;
